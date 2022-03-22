@@ -1,13 +1,15 @@
 #include "FuturaFaceTracker.h"
 #include "configuration.h"
 #include "camera_pins.h"
+#include "camera_settings.h"
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 static const char *_STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
 static const char *_STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
 static const char *_STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\nX-Timestamp: %d.%06d\r\n\r\n";
 
-void FuturaFaceTracker::configureCamera() {
+void FuturaFaceTracker::configureCamera()
+{
     camera_config_t configureCamera = {
         .pin_pwdn = CAM_PIN_PWDN,
         .pin_reset = CAM_PIN_RESET,
@@ -27,36 +29,59 @@ void FuturaFaceTracker::configureCamera() {
         .pin_href = CAM_PIN_HREF,
         .pin_pclk = CAM_PIN_PCLK,
 
-        //XCLK 20MHz or 10MHz for OV2640 double FPS (Experimental)
+        // XCLK 20MHz or 10MHz for OV2640 double FPS (Experimental)
         .xclk_freq_hz = 10000000,
         .ledc_timer = LEDC_TIMER_0,
         .ledc_channel = LEDC_CHANNEL_0,
 
-        .pixel_format = PIXFORMAT_JPEG, //YUV422,GRAYSCALE,RGB565,JPEG
-        .frame_size = FRAMESIZE_240X240,    //QQVGA-UXGA Do not use sizes above QVGA when not JPEG
+        .pixel_format = CAM_PIXEL_FORMAT, // PIXFORMAT_YUV422,PIXFORMAT_GRAYSCALE,PIXFORMAT_RGB565,PIXFORMAT_JPEG
+        .frame_size = CAM_FRAME_SIZE,     // FRAMESIZE_240X240,    //QQVGA-UXGA Do not use sizes above QVGA when not JPEG
 
-        .jpeg_quality = 7, //0-63 lower number means higher quality
-        .fb_count = 3,       //if more than one, i2s runs in continuous mode. Use only with JPEG
+        .jpeg_quality = CAM_JPEG_QUALITY, // 0-63 lower number means higher quality
+        .fb_count = 3,                    // if more than one, i2s runs in continuous mode. Use only with JPEG
     };
     this->cameraConfig = configureCamera;
 }
 
-bool FuturaFaceTracker::initCamera() {
+bool FuturaFaceTracker::initCamera()
+{
     esp_err_t err = esp_camera_init(&this->cameraConfig);
     if (err != ESP_OK)
     {
         Serial.println("Camera Init Failed");
         return false;
     }
-    sensor_t * s = esp_camera_sensor_get();
-    // s->set_denoise(s, 1);
-    // s->set_framesize(s, FRAMESIZE_240X240);
-    // s->set_brightness(s, 1);
+    sensor_t *s = esp_camera_sensor_get();
+
+    s->set_denoise(s, CAM_DENOISE);
+    s->set_framesize(s, CAM_FRAME_SIZE);
+    s->set_brightness(s, CAM_BRIGHTNESS);
+    s->set_contrast(s, CAM_CONTRAST);
+    s->set_saturation(s, CAM_SATURATION);
+    s->set_special_effect(s, CAM_EFFECT);
+    s->set_whitebal(s, CAM_WHITEBAL);
+    s->set_awb_gain(s, CAM_AWB_GAIN);
+    s->set_wb_mode(s, CAM_WB_MODE);
+    s->set_exposure_ctrl(s, CAM_EXPOSURE_CTRL);
+    s->set_aec2(s, CAM_AEC2);           // 0 =
+    s->set_ae_level(s, CAM_AE_LEVEL);   //
+    s->set_aec_value(s, CAM_AEC_VALUE); // 0
+    s->set_gain_ctrl(s, CAM_GAIN_CTRL); //
+    s->set_agc_gain(s, CAM_AGC_GAIN);   //
+    s->set_gainceiling(s, (gainceiling_t)CAM_GAINCEILING);
+    s->set_bpc(s, CAM_BPC);         // 0 = disable , 1
+    s->set_wpc(s, CAM_WPC);         // 0 = disable , 1
+    s->set_raw_gma(s, CAM_RAW_GMA); // 0 = disable
+    s->set_lenc(s, CAM_LENC);
+    s->set_hmirror(s, CAM_HMIRROR);
+    s->set_vflip(s, CAM_VFLIP);
+    s->set_dcw(s, CAM_DCW);
+    s->set_colorbar(s, CAM_COLORBAR);
     return true;
 }
 
-
-void FuturaFaceTracker::initStreamServer() {
+void FuturaFaceTracker::initStreamServer()
+{
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = STREAM_PORT;
     config.max_uri_handlers = 1;
@@ -65,8 +90,7 @@ void FuturaFaceTracker::initStreamServer() {
         .uri = "/stream",
         .method = HTTP_GET,
         .handler = FuturaFaceTracker::streamHandler,
-        .user_ctx = this
-    };
+        .user_ctx = this};
 
     Serial.println("Sarting stream server");
     if (httpd_start(&this->streamServer, &config) == ESP_OK)
@@ -75,7 +99,8 @@ void FuturaFaceTracker::initStreamServer() {
     }
 }
 
-esp_err_t FuturaFaceTracker::streamHandler(httpd_req_t *req) {
+esp_err_t FuturaFaceTracker::streamHandler(httpd_req_t *req)
+{
     FuturaFaceTracker *ft = (FuturaFaceTracker *)req->user_ctx;
     camera_fb_t *fb = NULL;
     struct timeval _timestamp;
